@@ -1,0 +1,28 @@
+name: Record on live notification
+
+on:
+  repository_dispatch:
+    types: [youtube-live]
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: record-${{ github.event.client_payload.video_id }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg and yt-dlp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -U yt-dlp
+
+      - name: Check video, record if live
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/check_and_record.sh "https://www.youtube.com/watch?v=${{ github.event.client_payload.video_id }}"

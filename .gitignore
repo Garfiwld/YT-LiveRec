@@ -1,0 +1,10 @@
+recordings/
+downloads/
+*.mp4
+*.mkv
+*.webm
+*.part
+*.ytdl
+*.log
+__pycache__/
+channels.txt

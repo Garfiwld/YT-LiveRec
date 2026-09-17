@@ -1,0 +1,30 @@
+name: Upload recording to YouTube
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install YouTube upload libs
+        run: pip install -U google-api-python-client google-auth
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p downloads
+          gh release download "${{ github.event.release.tag_name }}" --dir downloads
+
+      - name: Upload to YouTube as private
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          filepath=$(ls -- downloads/*.mp4 downloads/*.mkv downloads/*.webm 2>/dev/null | head -n1)
+          python3 scripts/upload_youtube.py "$filepath" "$(basename "${filepath%.*}")"

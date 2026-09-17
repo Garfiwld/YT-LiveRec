@@ -18,14 +18,23 @@ while IFS= read -r handle; do
   [ -z "$handle" ] && continue
   case "$handle" in \#*) continue ;; esac
 
-  info=$(yt-dlp --no-warnings -j "https://www.youtube.com/${handle}/live" 2>/dev/null) || { echo "$handle: couldn't resolve channel_id, skipping"; continue; }
+  info=$(yt-dlp --no-warnings --flat-playlist --playlist-items 1 -J "https://www.youtube.com/${handle}" 2>/dev/null) || { echo "$handle: couldn't resolve channel_id, skipping"; continue; }
   channel_id=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin)['channel_id'])")
 
   echo "Subscribing $handle ($channel_id)"
-  curl -s -o /dev/null -w "  hub responded: %{http_code}\n" https://pubsubhubbub.appspot.com/subscribe \
-    --data-urlencode "hub.mode=subscribe" \
-    --data-urlencode "hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=${channel_id}" \
-    --data-urlencode "hub.callback=${callback}" \
-    --data-urlencode "hub.secret=${secret}" \
-    --data-urlencode "hub.verify=async"
+  # ponytail: fixed 3-try/30s backoff for the hub's own transient 503s, not a general retry framework
+  for attempt in 1 2 3; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" https://pubsubhubbub.appspot.com/subscribe \
+      --data-urlencode "hub.mode=subscribe" \
+      --data-urlencode "hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=${channel_id}" \
+      --data-urlencode "hub.callback=${callback}" \
+      --data-urlencode "hub.secret=${secret}" \
+      --data-urlencode "hub.verify=async")
+    if [ "$code" = "202" ] || [ "$code" = "204" ]; then
+      echo "  hub responded: $code"
+      break
+    fi
+    echo "  hub responded: $code (attempt $attempt/3)"
+    [ "$attempt" -lt 3 ] && sleep 30
+  done
 done

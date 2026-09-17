@@ -8,3 +8,4 @@ downloads/
 *.log
 __pycache__/
 channels.txt
+.wrangler/

@@ -16,7 +16,7 @@ jobs:
 
       - name: Subscribe every channel to the worker
         env:
-          CHANNELS: ${{ secrets.CHANNELS }}
+          CHANNELS: ${{ vars.CHANNELS }}
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: echo "$CHANNELS" | ./scripts/subscribe.sh "$WORKER_URL" "$WEBHOOK_SECRET"

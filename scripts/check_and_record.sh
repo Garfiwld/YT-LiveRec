@@ -8,7 +8,7 @@ R2_BUCKET="yt-liverec-recordings"
 url="$1"
 
 echo "Checking $url"
-info=$(yt-dlp --no-warnings -j "$url") || { echo "  not available, skipping"; exit 0; }
+info=$(yt-dlp --no-warnings --extractor-args "youtube:player_client=android" -j "$url") || { echo "  not available, skipping"; exit 0; }
 is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
 if [ "$is_live" != "True" ]; then
   echo "  not live, skipping"
@@ -22,7 +22,7 @@ d = json.load(sys.stdin)
 print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']), d['id'])
 ")"
 date="${date:0:4}-${date:4:2}-${date:6:2}"
-filepath=$(yt-dlp --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
+filepath=$(yt-dlp --extractor-args "youtube:player_client=android" --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
 title=$(basename "$filepath")
 
 if [ -n "$SKIP_UPLOAD" ]; then

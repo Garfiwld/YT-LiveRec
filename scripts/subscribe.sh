@@ -19,7 +19,7 @@ while IFS= read -r handle; do
   case "$handle" in \#*) continue ;; esac
 
   info=$(yt-dlp --no-warnings --flat-playlist --playlist-items 1 -J "https://www.youtube.com/${handle}" 2>/dev/null) || { echo "$handle: couldn't resolve channel_id, skipping"; continue; }
-  channel_id=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin)['channel_id'])")
+  channel_id=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin)['channel_id'])") || { echo "$handle: no channel_id in response, skipping"; continue; }
 
   echo "Subscribing $handle ($channel_id)"
   # ponytail: fixed 3-try/30s backoff for the hub's own transient 503s, not a general retry framework

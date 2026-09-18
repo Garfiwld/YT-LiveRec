@@ -5,7 +5,7 @@
 # Set SKIP_UPLOAD=1 to record only, without uploading/dispatching.
 # Set YT_DLP_PROXY (e.g. socks5://host:port) to route yt-dlp through a
 # proxy — needed on GitHub Actions, whose datacenter IPs YouTube blocks.
-set -e
+set -e -o pipefail
 R2_BUCKET="yt-liverec-recordings"
 url="$1"
 proxy_args=()

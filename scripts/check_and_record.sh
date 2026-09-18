@@ -8,7 +8,7 @@ R2_BUCKET="yt-liverec-recordings"
 url="$1"
 
 echo "Checking $url"
-info=$(yt-dlp --no-warnings -j "$url" 2>/dev/null) || { echo "  not available, skipping"; exit 0; }
+info=$(yt-dlp --no-warnings -j "$url") || { echo "  not available, skipping"; exit 0; }
 is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
 if [ "$is_live" != "True" ]; then
   echo "  not live, skipping"

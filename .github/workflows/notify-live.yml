@@ -30,7 +30,8 @@ jobs:
       - name: Check video, record if live
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           YT_DLP_PROXY: socks5://100.103.196.38:1080
         run: ./scripts/check_and_record.sh "https://www.youtube.com/watch?v=${{ github.event.client_payload.video_id }}"

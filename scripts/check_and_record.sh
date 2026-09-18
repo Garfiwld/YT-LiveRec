@@ -32,7 +32,8 @@ title=$(basename "$filepath")
 if [ -n "$SKIP_UPLOAD" ]; then
   echo "  recorded to $filepath (SKIP_UPLOAD set, not uploading)"
 else
-  npx wrangler r2 object put "${R2_BUCKET}/${title}" --file="$filepath" --remote
+  AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" AWS_DEFAULT_REGION=auto \
+    aws s3 cp "$filepath" "s3://${R2_BUCKET}/${title}" --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
   echo "{\"event_type\":\"recording-ready\",\"client_payload\":{\"key\":\"$title\"}}" \
     | gh api "repos/$GITHUB_REPOSITORY/dispatches" --input -
 fi

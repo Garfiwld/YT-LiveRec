@@ -8,8 +8,10 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
       R2_BUCKET: yt-liverec-recordings
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +22,8 @@ jobs:
       - name: Download recording from R2
         run: |
           mkdir -p downloads
-          npx wrangler r2 object get "${R2_BUCKET}/${{ github.event.client_payload.key }}" \
-            --file="downloads/${{ github.event.client_payload.key }}" --remote
+          aws s3 cp "s3://${R2_BUCKET}/${{ github.event.client_payload.key }}" \
+            "downloads/${{ github.event.client_payload.key }}" --endpoint-url "$R2_ENDPOINT"
 
       - name: Upload to YouTube as private
         env:
@@ -33,4 +35,4 @@ jobs:
           python3 scripts/upload_youtube.py "$filepath" "$(basename "${filepath%.*}")"
 
       - name: Delete the recording from R2 now that it's on YouTube
-        run: npx wrangler r2 object delete "${R2_BUCKET}/${{ github.event.client_payload.key }}" --remote
+        run: aws s3 rm "s3://${R2_BUCKET}/${{ github.event.client_payload.key }}" --endpoint-url "$R2_ENDPOINT"

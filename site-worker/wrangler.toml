@@ -1,0 +1,7 @@
+name = "yt-liverec-site"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[[routes]]
+pattern = "yt-liverec.xn--23a.cc"
+custom_domain = true

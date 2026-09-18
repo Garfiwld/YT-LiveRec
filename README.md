@@ -1,33 +1,51 @@
 # YT-LiveRec
 
-Records YouTube live streams from a channel list, publishes each recording
-as a GitHub Release, and uploads it to YouTube as a private video.
+Records YouTube live streams from a channel list, hands each recording off
+via a (temporary) GitHub Release, and uploads it to YouTube as a private
+video.
 
 ## How it works
 
-**Trigger 1 — manual**
-Run [record-live.yml](.github/workflows/record-live.yml). It reads the
-channel list from the `CHANNELS` repo variable, checks each channel in
-parallel (one job per channel), and records with `yt-dlp --live-from-start`
-if it's live.
+**Detection — two paths, one destination**
 
-**Trigger 2 — webhook (automatic)**
-[scripts/subscribe.sh](scripts/subscribe.sh) subscribes each channel to
-YouTube's PubSubHubbub feed, pointed at a Cloudflare Worker
-([cloudflare-worker/worker.js](cloudflare-worker/worker.js)). When a channel
-publishes/updates a video, YouTube pings the Worker, which verifies the
-request and forwards it to GitHub as a `repository_dispatch` event, firing
-[notify-live.yml](.github/workflows/notify-live.yml) for that one video.
-[resubscribe.yml](.github/workflows/resubscribe.yml) renews these
-subscriptions every 5 days (they expire after ~10).
+- **Webhook (event-driven):** [scripts/subscribe.sh](scripts/subscribe.sh)
+  subscribes each channel to YouTube's PubSubHubbub feed, pointed at a
+  Cloudflare Worker ([cloudflare-worker/worker.js](cloudflare-worker/worker.js)).
+  When a channel publishes/updates a video, YouTube pings the Worker, which
+  verifies the request and forwards it to GitHub as a `repository_dispatch`
+  event. [resubscribe.yml](.github/workflows/resubscribe.yml) renews these
+  subscriptions every 5 days (they expire after ~10). This depends on
+  Google's PubSubHubbub hub (`pubsubhubbub.appspot.com`), which is known to
+  return transient (sometimes extended) 503s — see the polling path below
+  for when it's down.
+- **Polling:** [poll-live.yml](.github/workflows/poll-live.yml) checks every
+  channel's live status directly (no recording, cheap) and dispatches the
+  same event as the webhook when it finds one live. It's triggered by
+  `workflow_dispatch` — either manually, or on a schedule via an external
+  cron service (e.g. cron-job.org) calling its `/dispatches` API, since
+  GitHub's own `schedule:` trigger was dropped in favor of that.
 
-Both trigger paths share the same check-and-record logic:
-[scripts/check_and_record.sh](scripts/check_and_record.sh).
+Both paths converge on the same `youtube-live` `repository_dispatch` event,
+which [notify-live.yml](.github/workflows/notify-live.yml) picks up: it
+re-checks the specific video and, if live, records it with
+[scripts/check_and_record.sh](scripts/check_and_record.sh) — the same script
+a local run uses (see below) — and publishes it as a GitHub Release.
+`concurrency: group: record-<video_id>` there means a duplicate dispatch for
+the same video queues instead of double-recording.
 
 **After a recording lands**
 A new GitHub Release fires [upload-youtube.yml](.github/workflows/upload-youtube.yml),
-which downloads the asset and uploads it to YouTube with
-[scripts/upload_youtube.py](scripts/upload_youtube.py) as `privacyStatus: private`.
+which downloads the asset, uploads it to YouTube with
+[scripts/upload_youtube.py](scripts/upload_youtube.py) as `privacyStatus: private`,
+then deletes the Release (and its tag) — it was only ever a handoff to get
+the file off the runner, not permanent storage.
+
+**Running locally**
+[scripts/run_local.sh](scripts/run_local.sh) reads handles from
+`scripts/channels.txt` (one per line, `#` comments allowed) and
+checks/records each in parallel — same `check_and_record.sh` logic, but
+sets `SKIP_RELEASE=1` so recordings stay local instead of becoming a
+GitHub Release.
 
 ## Setup
 
@@ -63,7 +81,21 @@ gh secret set WEBHOOK_SECRET  # same value as step 2
 gh variable get CHANNELS | ./scripts/subscribe.sh <worker-url> <webhook-secret>
 ```
 
-### 5. (Optional) YouTube upload
+### 5. External polling schedule
+`poll-live.yml` has no built-in schedule — point an external cron service
+(e.g. [cron-job.org](https://cron-job.org)) at its dispatch API:
+```
+POST https://api.github.com/repos/<owner>/<repo>/actions/workflows/poll-live.yml/dispatches
+Authorization: Bearer <fine-grained PAT, Actions: read and write, scoped to this repo>
+Accept: application/vnd.github+json
+Content-Type: application/json
+
+{"ref":"master"}
+```
+Use a separate PAT from the Worker's — least privilege, independently
+revocable.
+
+### 6. (Optional) YouTube upload
 Requires OAuth credentials from Google Cloud Console (YouTube Data API v3
 enabled):
 ```bash
@@ -71,13 +103,3 @@ gh secret set YT_CLIENT_ID
 gh secret set YT_CLIENT_SECRET
 gh secret set YT_REFRESH_TOKEN
 ```
-
-## Notes
-
-- The webhook path depends on Google's PubSubHubbub hub
-  (`pubsubhubbub.appspot.com`), which occasionally returns transient 503s.
-  The manual trigger and `resubscribe.yml`'s periodic renewal are the
-  fallback if it's ever down for a while.
-- `record` jobs are keyed by `concurrency: record-<handle>` (or `<video_id>`
-  for the webhook path) so re-triggering while a channel is already being
-  recorded queues instead of double-recording.

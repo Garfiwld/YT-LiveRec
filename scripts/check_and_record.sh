@@ -1,7 +1,10 @@
 #!/bin/bash
 # Checks whether $1 (a YouTube video or /live URL) is live; if so, records
-# it from the start and publishes it as a GitHub Release.
+# it from the start, uploads it to R2, and dispatches a recording-ready
+# event for upload-youtube.yml to pick up.
+# Set SKIP_UPLOAD=1 to record only, without uploading/dispatching.
 set -e
+R2_BUCKET="yt-liverec-recordings"
 url="$1"
 
 echo "Checking $url"
@@ -21,5 +24,11 @@ print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']),
 date="${date:0:4}-${date:4:2}-${date:6:2}"
 filepath=$(yt-dlp --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
 title=$(basename "$filepath")
-tag="rec-${GITHUB_RUN_ID}-$(echo "$title" | md5sum | cut -c1-6)"
-gh release create "$tag" "$filepath" --title "$title" --notes "Recorded from $url"
+
+if [ -n "$SKIP_UPLOAD" ]; then
+  echo "  recorded to $filepath (SKIP_UPLOAD set, not uploading)"
+else
+  npx wrangler r2 object put "${R2_BUCKET}/${title}" --file="$filepath" --remote
+  echo "{\"event_type\":\"recording-ready\",\"client_payload\":{\"key\":\"$title\"}}" \
+    | gh api "repos/$GITHUB_REPOSITORY/dispatches" --input -
+fi

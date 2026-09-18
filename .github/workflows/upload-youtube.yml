@@ -1,24 +1,27 @@
 name: Upload recording to YouTube
 
 on:
-  release:
-    types: [published]
+  repository_dispatch:
+    types: [recording-ready]
 
 jobs:
   upload:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_BUCKET: yt-liverec-recordings
     steps:
       - uses: actions/checkout@v4
 
       - name: Install YouTube upload libs
         run: pip install -U google-api-python-client google-auth
 
-      - name: Download release asset
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download recording from R2
         run: |
           mkdir -p downloads
-          gh release download "${{ github.event.release.tag_name }}" --dir downloads
+          npx wrangler r2 object get "${R2_BUCKET}/${{ github.event.client_payload.key }}" \
+            --file="downloads/${{ github.event.client_payload.key }}" --remote
 
       - name: Upload to YouTube as private
         env:
@@ -26,5 +29,8 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          filepath=$(ls -- downloads/*.mp4 downloads/*.mkv downloads/*.webm 2>/dev/null | head -n1)
+          filepath="downloads/${{ github.event.client_payload.key }}"
           python3 scripts/upload_youtube.py "$filepath" "$(basename "${filepath%.*}")"
+
+      - name: Delete the recording from R2 now that it's on YouTube
+        run: npx wrangler r2 object delete "${R2_BUCKET}/${{ github.event.client_payload.key }}" --remote

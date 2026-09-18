@@ -3,12 +3,16 @@
 # it from the start, uploads it to R2, and dispatches a recording-ready
 # event for upload-youtube.yml to pick up.
 # Set SKIP_UPLOAD=1 to record only, without uploading/dispatching.
+# Set YT_DLP_PROXY (e.g. socks5://host:port) to route yt-dlp through a
+# proxy — needed on GitHub Actions, whose datacenter IPs YouTube blocks.
 set -e
 R2_BUCKET="yt-liverec-recordings"
 url="$1"
+proxy_args=()
+[ -n "$YT_DLP_PROXY" ] && proxy_args=(--proxy "$YT_DLP_PROXY")
 
 echo "Checking $url"
-info=$(yt-dlp --no-warnings --extractor-args "youtube:player_client=android" -j "$url") || { echo "  not available, skipping"; exit 0; }
+info=$(yt-dlp --no-warnings "${proxy_args[@]}" -j "$url") || { echo "  not available, skipping"; exit 0; }
 is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
 if [ "$is_live" != "True" ]; then
   echo "  not live, skipping"
@@ -22,7 +26,7 @@ d = json.load(sys.stdin)
 print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']), d['id'])
 ")"
 date="${date:0:4}-${date:4:2}-${date:6:2}"
-filepath=$(yt-dlp --extractor-args "youtube:player_client=android" --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
+filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
 title=$(basename "$filepath")
 
 if [ -n "$SKIP_UPLOAD" ]; then

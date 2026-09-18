@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
       - name: Install ffmpeg and yt-dlp
         run: |
           sudo apt-get update
@@ -27,4 +32,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          YT_DLP_PROXY: socks5://100.103.196.38:1080
         run: ./scripts/check_and_record.sh "https://www.youtube.com/watch?v=${{ github.event.client_payload.video_id }}"

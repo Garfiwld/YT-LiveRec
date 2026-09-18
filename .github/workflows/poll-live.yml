@@ -1,11 +1,11 @@
 name: Poll for live streams
 
-# Detection only — no recording here. Every 10 minutes, checks each channel
-# and, if live, dispatches a "youtube-live" event that notify-live.yml
-# (the same one the Cloudflare Worker webhook fires) picks up and records.
+# Detection only — no recording here. Checks each channel and, if live,
+# dispatches a "youtube-live" event that notify-live.yml (the same one
+# the Cloudflare Worker webhook fires) picks up and records.
+# Triggered externally on a schedule by cron-job.org (POST to this
+# workflow's /dispatches API) instead of GitHub's own `schedule:`.
 on:
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:

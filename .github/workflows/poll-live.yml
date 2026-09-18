@@ -1,0 +1,53 @@
+name: Poll for live streams
+
+# Detection only — no recording here. Every 10 minutes, checks each channel
+# and, if live, dispatches a "youtube-live" event that notify-live.yml
+# (the same one the Cloudflare Worker webhook fires) picks up and records.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      handles: ${{ steps.list.outputs.handles }}
+    steps:
+      - id: list
+        env:
+          CHANNELS: ${{ vars.CHANNELS }}
+        run: |
+          handles=$(echo "$CHANNELS" | grep -v '^#' | grep -v '^$' | jq -R -s -c 'split("\n") | map(select(length>0))')
+          echo "handles=$handles" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        handle: ${{ fromJson(needs.discover.outputs.handles) }}
+    steps:
+      - name: Install yt-dlp
+        run: pip install -U yt-dlp
+
+      - name: Check channel, dispatch if live
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          url="https://www.youtube.com/${{ matrix.handle }}/live"
+          info=$(yt-dlp --no-warnings -j "$url" 2>/dev/null) || { echo "not available, skipping"; exit 0; }
+          is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
+          if [ "$is_live" != "True" ]; then
+            echo "not live, skipping"
+            exit 0
+          fi
+
+          video_id=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          echo "live! dispatching $video_id"
+          echo "{\"event_type\":\"youtube-live\",\"client_payload\":{\"video_id\":\"$video_id\"}}" \
+            | gh api "repos/${{ github.repository }}/dispatches" --input -

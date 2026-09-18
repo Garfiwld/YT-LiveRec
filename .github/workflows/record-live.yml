@@ -1,4 +1,4 @@
-name: Record live streams
+name: Record live streams (manual)
 
 on:
   workflow_dispatch:

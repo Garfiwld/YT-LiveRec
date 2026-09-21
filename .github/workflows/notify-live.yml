@@ -16,14 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
+      - name: Install and connect Cloudflare WARP
+        run: |
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update && sudo apt-get install -y cloudflare-warp
+          sudo systemctl enable --now warp-svc
+          sleep 3
+          sudo warp-cli --accept-tos registration new
+          sudo warp-cli --accept-tos set-mode proxy
+          sudo warp-cli --accept-tos set-proxy-port 40000
+          sudo warp-cli --accept-tos connect
+          sleep 3
+          warp-cli --accept-tos status
 
       - name: Install ffmpeg and yt-dlp
         run: |
-          sudo apt-get update
           sudo apt-get install -y ffmpeg
           pip install -U yt-dlp
 
@@ -33,5 +41,5 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          YT_DLP_PROXY: socks5://100.103.196.38:1080
+          YT_DLP_PROXY: socks5://127.0.0.1:40000
         run: ./scripts/check_and_record.sh "https://www.youtube.com/watch?v=${{ github.event.client_payload.video_id }}"

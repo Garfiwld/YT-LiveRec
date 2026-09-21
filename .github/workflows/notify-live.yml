@@ -24,11 +24,8 @@ jobs:
           sudo systemctl enable --now warp-svc
           sleep 3
           sudo warp-cli --accept-tos registration new
-          sudo warp-cli --accept-tos set-mode proxy
-          sudo warp-cli --accept-tos set-proxy-port 40000
-          sudo warp-cli --accept-tos connect
-          sleep 3
-          warp-cli --accept-tos status
+          warp-cli --accept-tos --help
+          warp-cli --accept-tos mode --help
 
       - name: Install ffmpeg and yt-dlp
         run: |

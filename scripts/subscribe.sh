@@ -14,7 +14,7 @@ if [ -z "$callback" ] || [ -z "$secret" ]; then
   exit 1
 fi
 
-while IFS= read -r handle; do
+while IFS= read -r handle || [ -n "$handle" ]; do
   [ -z "$handle" ] && continue
   case "$handle" in \#*) continue ;; esac
 

@@ -10,7 +10,7 @@ export SKIP_UPLOAD=1
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 file="${1:-$dir/channels.txt}"
 
-while IFS= read -r handle || [ -n "$handle" ]; do
+while IFS= read -r handle; do
   [ -z "$handle" ] && continue
   case "$handle" in \#*) continue ;; esac
   "$dir/check_and_record.sh" "https://www.youtube.com/${handle}/live" &

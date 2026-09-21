@@ -28,10 +28,12 @@ print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']),
 date="${date:0:4}-${date:4:2}-${date:6:2}"
 outtmpl="recordings/${handle}-${date}-${id}"
 
-( while :; do
+( start=$SECONDS
+  while :; do
     sleep 30
     size=$(du -ch "${outtmpl}"*.part 2>/dev/null | tail -1 | cut -f1) || true
-    [ -n "$size" ] && echo "  ...still recording, $size so far"
+    elapsed=$(( SECONDS - start ))
+    [ -n "$size" ] && printf '  ...still recording, %dm%02ds elapsed, %s so far\n' "$((elapsed/60))" "$((elapsed%60))" "$size"
   done ) &
 progress_pid=$!
 trap 'kill "$progress_pid" 2>/dev/null' EXIT

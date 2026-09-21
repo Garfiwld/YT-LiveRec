@@ -26,13 +26,16 @@ jobs:
       - name: Install yt-dlp
         run: pip install -U yt-dlp
 
-      - name: Extract a media URL via WARP, then test fetching it with and without WARP
+      - name: Extract a real segment URL via WARP, then test fetching it with and without WARP
         run: |
-          mediaurl=$(yt-dlp --no-warnings --proxy socks5://127.0.0.1:40000 -f "worst" -g "${{ inputs.url }}" | head -1)
-          echo "media url host: $(echo "$mediaurl" | sed -E 's#https://([^/]+)/.*#\1#')"
+          manifesturl=$(yt-dlp --no-warnings --proxy socks5://127.0.0.1:40000 -j "${{ inputs.url }}" | python3 -c "import json,sys; print(json.load(sys.stdin)['formats'][0]['url'])")
+          echo "manifest url: $manifesturl" | cut -c1-100
+
+          segmenturl=$(curl -s --proxy socks5://127.0.0.1:40000 "$manifesturl" | grep -m1 "^https")
+          echo "segment url: $segmenturl" | cut -c1-100
 
           echo "--- via WARP proxy ---"
-          curl -s -o /dev/null -w "HTTP %{http_code}, %{size_download} bytes\n" --proxy socks5://127.0.0.1:40000 --max-time 10 -r 0-100000 "$mediaurl"
+          curl -s -o /dev/null -w "HTTP %{http_code}, %{size_download} bytes\n" --proxy socks5://127.0.0.1:40000 --max-time 10 -r 0-100000 "$segmenturl"
 
           echo "--- direct, no proxy (runner's own IP) ---"
-          curl -s -o /dev/null -w "HTTP %{http_code}, %{size_download} bytes\n" --max-time 10 -r 0-100000 "$mediaurl"
+          curl -s -o /dev/null -w "HTTP %{http_code}, %{size_download} bytes\n" --max-time 10 -r 0-100000 "$segmenturl"

@@ -26,7 +26,18 @@ d = json.load(sys.stdin)
 print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']), d['id'])
 ")"
 date="${date:0:4}-${date:4:2}-${date:6:2}"
-filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "recordings/${handle}-${date}-${id}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
+outtmpl="recordings/${handle}-${date}-${id}"
+
+( while :; do
+    sleep 30
+    size=$(du -ch "${outtmpl}"*.part 2>/dev/null | tail -1 | cut -f1) || true
+    [ -n "$size" ] && echo "  ...still recording, $size so far"
+  done ) &
+progress_pid=$!
+trap 'kill "$progress_pid" 2>/dev/null' EXIT
+
+filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "${outtmpl}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
+kill "$progress_pid" 2>/dev/null
 title=$(basename "$filepath")
 
 if [ -n "$SKIP_UPLOAD" ]; then

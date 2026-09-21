@@ -28,16 +28,39 @@ print(d['uploader_id'].lstrip('@'), (d.get('release_date') or d['upload_date']),
 date="${date:0:4}-${date:4:2}-${date:6:2}"
 outtmpl="recordings/${handle}-${date}-${id}"
 
-( while :; do
+( prev_bytes=0
+  while :; do
     sleep 30
-    size=$(du -ch "${outtmpl}"*.part 2>/dev/null | tail -1 | cut -f1) || true
-    [ -n "$size" ] && echo "  ...[$(date '+%H:%M:%S')] still recording, $size so far"
+    bytes=$(du -cb "${outtmpl}"*.part 2>/dev/null | tail -1 | cut -f1) || true
+    if [ -n "$bytes" ]; then
+      size=$(numfmt --to=iec --suffix=B "$bytes")
+      rate=$(awk -v b="$bytes" -v p="$prev_bytes" 'BEGIN { printf "%.1f", (b-p)/30/1024/1024 }')
+      echo "  ...[$(date '+%H:%M:%S')] still recording, $size so far (~${rate} MB/s)"
+      prev_bytes=$bytes
+    fi
   done ) &
 progress_pid=$!
 trap 'kill "$progress_pid" 2>/dev/null' EXIT
 
-filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "${outtmpl}.%(ext)s" --print after_move:filepath "$url" | tail -n1)
+# yt-dlp resumes from existing fragments on the same outtmpl, so a retry
+# after a dropped connection continues rather than starting over.
+max_attempts=10
+attempt=1
+filepath=""
+while [ "$attempt" -le "$max_attempts" ]; do
+  if filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "${outtmpl}.%(ext)s" --print after_move:filepath "$url" | tail -n1) && [ -n "$filepath" ]; then
+    break
+  fi
+  echo "  recording attempt $attempt/$max_attempts failed, retrying in 10s..."
+  attempt=$((attempt + 1))
+  sleep 10
+done
 kill "$progress_pid" 2>/dev/null
+
+if [ -z "$filepath" ]; then
+  echo "  gave up after $max_attempts attempts"
+  exit 1
+fi
 title=$(basename "$filepath")
 
 if [ -n "$SKIP_UPLOAD" ]; then

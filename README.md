@@ -34,9 +34,14 @@ double-recording.
 **Getting past YouTube's datacenter-IP block**
 YouTube returns "Sign in to confirm you're not a bot" for some live videos
 when yt-dlp runs from GitHub Actions' IPs. `notify-live.yml` and
-`poll-live.yml` join a Tailscale tailnet (`tailscale/github-action`) and
-route yt-dlp through a `microsocks` SOCKS5 proxy bound to a machine on that
-tailnet with a normal (non-datacenter) IP — see Setup step 6.
+`poll-live.yml` install Cloudflare WARP on the runner itself and route
+yt-dlp through its local SOCKS5 proxy mode (`127.0.0.1:40000`) — no
+external machine involved. (We tried Tailscale first: fine for the cheap
+`poll-live.yml` checks, but the runner's connection back to a home
+machine relayed through a distant DERP server instead of a direct P2P
+link — not enough sustained bandwidth for an actual live download, which
+failed after ~1h of "Did not get any data blocks". WARP runs entirely on
+the runner with the Cloudflare network's own bandwidth, no relay.)
 
 **After a recording lands**
 `check_and_record.sh` uploads the file to an R2 bucket with `aws s3 cp`
@@ -100,22 +105,14 @@ gh secret set R2_SECRET_ACCESS_KEY    # from step 3
 gh variable get CHANNELS | ./scripts/subscribe.sh <worker-url> <webhook-secret>
 ```
 
-### 6. Tailscale (bypass YouTube's datacenter-IP block)
-On a machine with a normal IP that can stay reachable:
-```bash
-sudo tailscale up --advertise-exit-node   # or just leave it as a regular tailnet member
-sudo apt-get install -y microsocks
-microsocks -i <that machine's Tailscale IP> -p 1080 &
-```
-Generate a **reusable** Tailscale auth key (login.tailscale.com/admin/settings/keys)
-and set it as a secret:
-```bash
-gh secret set TS_AUTHKEY
-```
-Update the hardcoded `100.103.196.38:1080` proxy address in
-[notify-live.yml](.github/workflows/notify-live.yml) and
-[poll-live.yml](.github/workflows/poll-live.yml) to match your machine's
-Tailscale IP.
+### 6. Nothing to set up here
+Cloudflare WARP (used to dodge YouTube's datacenter-IP block, see above)
+installs and connects itself inside each workflow run — no secrets, no
+external machine. `warp-cli` syntax has moved around between versions;
+if a future WARP release breaks the `mode proxy` / `proxy port` commands
+in [notify-live.yml](.github/workflows/notify-live.yml) or
+[poll-live.yml](.github/workflows/poll-live.yml), run
+`warp-cli --accept-tos --help` on a fresh runner to find the current one.
 
 ### 7. External polling trigger
 ```

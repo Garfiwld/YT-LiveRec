@@ -32,10 +32,19 @@ jobs:
       matrix:
         handle: ${{ fromJson(needs.discover.outputs.handles) }}
     steps:
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
+      - name: Install and connect Cloudflare WARP
+        run: |
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update && sudo apt-get install -y cloudflare-warp
+          sudo systemctl enable --now warp-svc
+          sleep 3
+          sudo warp-cli --accept-tos registration new
+          sudo warp-cli --accept-tos mode proxy
+          sudo warp-cli --accept-tos proxy port 40000
+          sudo warp-cli --accept-tos connect
+          sleep 3
+          warp-cli --accept-tos status
 
       - name: Install yt-dlp
         run: pip install -U yt-dlp
@@ -45,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           url="https://www.youtube.com/${{ matrix.handle }}/live"
-          info=$(yt-dlp --no-warnings --proxy socks5://100.103.196.38:1080 -j "$url") || { echo "not available, skipping"; exit 0; }
+          info=$(yt-dlp --no-warnings --proxy socks5://127.0.0.1:40000 -j "$url") || { echo "not available, skipping"; exit 0; }
           is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
           if [ "$is_live" != "True" ]; then
             echo "not live, skipping"

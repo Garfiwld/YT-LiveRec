@@ -40,7 +40,7 @@ outtmpl="recordings/${handle}-${date}-${id}"
     fi
   done ) &
 progress_pid=$!
-trap 'kill "$progress_pid" 2>/dev/null' EXIT
+trap 'kill "$progress_pid" 2>/dev/null || true' EXIT
 
 # yt-dlp resumes from existing fragments on the same outtmpl, so a retry
 # after a dropped connection continues rather than starting over.
@@ -55,7 +55,7 @@ while [ "$attempt" -le "$max_attempts" ]; do
   attempt=$((attempt + 1))
   sleep 10
 done
-kill "$progress_pid" 2>/dev/null
+kill "$progress_pid" 2>/dev/null || true
 
 if [ -z "$filepath" ]; then
   echo "  gave up after $max_attempts attempts"

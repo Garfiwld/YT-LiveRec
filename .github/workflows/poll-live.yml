@@ -54,7 +54,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           url="https://www.youtube.com/${{ matrix.handle }}/live"
-          info=$(yt-dlp --no-warnings --proxy socks5://127.0.0.1:40000 -j "$url") || { echo "not available, skipping"; exit 0; }
+          max_attempts=3
+          attempt=1
+          info=""
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if info=$(yt-dlp --no-warnings --proxy socks5://127.0.0.1:40000 -j "$url"); then
+              break
+            fi
+            echo "check attempt $attempt/$max_attempts failed, reconnecting WARP for a new IP..."
+            sudo warp-cli --accept-tos disconnect
+            sleep 2
+            sudo warp-cli --accept-tos connect
+            sleep 3
+            attempt=$((attempt + 1))
+          done
+          if [ -z "$info" ]; then
+            echo "not available after $max_attempts attempts, skipping"
+            exit 0
+          fi
           is_live=$(echo "$info" | python3 -c "import json,sys; print(json.load(sys.stdin).get('is_live'))")
           if [ "$is_live" != "True" ]; then
             echo "not live, skipping"

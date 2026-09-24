@@ -1,0 +1,24 @@
+name: Cleanup
+
+# Every real workflow run here is a fully-automated pipeline stage with
+# nothing worth keeping around, so wipe ALL run history repo-wide (this
+# workflow's own past runs included) right after each pipeline stage
+# finishes. Has to be a separate workflow: GitHub won't let a run delete
+# its own still-in-progress record, only ones that have already finished.
+on:
+  workflow_run:
+    workflows: ["Record on live notification", "Upload recording to YouTube"]
+    types: [completed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all completed workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs" --paginate \
+            --jq '.workflow_runs[] | select(.status == "completed") | .id' | while read -r id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" || true
+          done

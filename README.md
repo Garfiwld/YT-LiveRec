@@ -5,27 +5,22 @@ via Cloudflare R2, and uploads it to YouTube as a private video.
 
 ## How it works
 
-**Detection — two paths, one destination**
+**Detection — a Cloudflare Worker polls, no webhook**
+[cloudflare-worker/worker.js](cloudflare-worker/worker.js) runs on its own
+Cron Trigger (every 10 minutes). Each run, it reads the channel list from
+its KV namespace and, per channel, fetches `youtube.com/<handle>/live` as
+plain HTML — a `<link rel="canonical">` pointing at a real video ID means
+that channel is live right now, and this plain fetch isn't behind the
+bot-check that gates YouTube's player API, so no proxy/WARP is needed for
+detection. When it finds one live, it dispatches a `youtube-live`
+`repository_dispatch` event to GitHub with the video ID.
 
-- **Webhook (event-driven):** [scripts/subscribe.sh](scripts/subscribe.sh)
-  subscribes each channel to YouTube's PubSubHubbub feed, pointed at a
-  Cloudflare Worker ([cloudflare-worker/worker.js](cloudflare-worker/worker.js)).
-  When a channel publishes/updates a video, YouTube pings the Worker, which
-  verifies the request and forwards it to GitHub as a `youtube-live`
-  `repository_dispatch` event. [resubscribe.yml](.github/workflows/resubscribe.yml)
-  renews these subscriptions every 5 days (they expire after ~10). This
-  depends on Google's PubSubHubbub hub (`pubsubhubbub.appspot.com`), which
-  is known to return transient (sometimes extended) 503s — the polling
-  path below is the fallback for when it's down.
-- **Polling:** [poll-live.yml](.github/workflows/poll-live.yml) checks every
-  channel's live status directly (no recording, cheap) and dispatches the
-  same `youtube-live` event when it finds one live. It has no built-in
-  schedule — trigger it manually, or point an external cron service (e.g.
-  cron-job.org) at its `workflow_dispatch` API.
+The channel list itself is edited through the same Worker's `/admin` page
+(`?token=...`, see setup below) instead of a repo variable or a file —
+GET shows the current list in a textarea, POST saves it back to KV.
 
-Both paths converge on `youtube-live`, which
-[notify-live.yml](.github/workflows/notify-live.yml) picks up: it re-checks
-the specific video and, if live, records it with
+`notify-live.yml` picks up `youtube-live`: it re-checks the specific video
+and, if live, records it with
 [scripts/check_and_record.sh](scripts/check_and_record.sh) — the same
 script a local run uses (see below). `concurrency: group: record-<video_id>`
 there means a duplicate dispatch for the same video queues instead of
@@ -33,15 +28,15 @@ double-recording.
 
 **Getting past YouTube's datacenter-IP block**
 YouTube returns "Sign in to confirm you're not a bot" for some live videos
-when yt-dlp runs from GitHub Actions' IPs. `notify-live.yml` and
-`poll-live.yml` install Cloudflare WARP on the runner itself and route
-yt-dlp through its local SOCKS5 proxy mode (`127.0.0.1:40000`) — no
-external machine involved. (We tried Tailscale first: fine for the cheap
-`poll-live.yml` checks, but the runner's connection back to a home
-machine relayed through a distant DERP server instead of a direct P2P
-link — not enough sustained bandwidth for an actual live download, which
-failed after ~1h of "Did not get any data blocks". WARP runs entirely on
-the runner with the Cloudflare network's own bandwidth, no relay.)
+when yt-dlp runs from GitHub Actions' IPs — this only bites the actual
+recording step, since detection (above) avoids it entirely. `notify-live.yml`
+installs Cloudflare WARP on the runner itself and routes yt-dlp through its
+local SOCKS5 proxy mode (`127.0.0.1:40000`) — no external machine involved.
+(We tried Tailscale first: the runner's connection back to a home machine
+relayed through a distant DERP server instead of a direct P2P link — not
+enough sustained bandwidth for an actual live download, which failed after
+~1h of "Did not get any data blocks". WARP runs entirely on the runner with
+the Cloudflare network's own bandwidth, no relay.)
 
 **After a recording lands**
 `check_and_record.sh` uploads the file to an R2 bucket with `aws s3 cp`
@@ -61,26 +56,25 @@ sets `SKIP_UPLOAD=1` so recordings stay local instead of going to R2.
 
 ## Setup
 
-### 1. Channel list
-Not committed to the repo. Set it directly as a repo variable, one handle
-per line (lines starting with `#` are ignored):
-```bash
-gh variable set CHANNELS <<'EOF'
-@MrBeast
-@NASA
-EOF
-```
-
-### 2. Cloudflare Worker (webhook relay)
+### 1. Cloudflare Worker (detection + channel list)
 ```bash
 cd cloudflare-worker
 npx wrangler login
+npx wrangler kv namespace create CHANNELS_KV   # paste the returned [[kv_namespaces]] block into wrangler.toml
 npx wrangler deploy
-npx wrangler secret put GH_TOKEN        # fine-grained PAT, Contents: read/write, scoped to this repo only
-npx wrangler secret put WEBHOOK_SECRET  # any random value; must match the repo secret below
+npx wrangler secret put GH_TOKEN      # fine-grained PAT, Contents: read/write, scoped to this repo only
+npx wrangler secret put ADMIN_TOKEN   # any random value — gates the /admin channel-list page
 ```
 Set `GH_REPO` in [wrangler.toml](cloudflare-worker/wrangler.toml) to
 `owner/repo`, then `npx wrangler deploy` again.
+
+### 2. Channel list
+Not committed to the repo. Set it via the Worker's own admin page:
+```
+https://<worker-url>/admin?token=<ADMIN_TOKEN from step 1>
+```
+One handle per line (lines starting with `#` are ignored), e.g. `@MrBeast`.
+Or seed it directly: `npx wrangler kv key put --binding=CHANNELS_KV --remote channels --path=channels.txt`.
 
 ### 3. R2 bucket
 ```bash
@@ -93,40 +87,20 @@ a Cloudflare API token.
 
 ### 4. Repo secrets
 ```bash
-gh secret set WORKER_URL              # the deployed Worker's URL
-gh secret set WEBHOOK_SECRET          # same value as step 2
 gh secret set CLOUDFLARE_ACCOUNT_ID   # for the R2 S3 endpoint URL
 gh secret set R2_ACCESS_KEY_ID        # from step 3
 gh secret set R2_SECRET_ACCESS_KEY    # from step 3
 ```
 
-### 5. Subscribe channels to the webhook
-```bash
-gh variable get CHANNELS | ./scripts/subscribe.sh <worker-url> <webhook-secret>
-```
-
-### 6. Nothing to set up here
+### 5. Nothing to set up here
 Cloudflare WARP (used to dodge YouTube's datacenter-IP block, see above)
-installs and connects itself inside each workflow run — no secrets, no
-external machine. `warp-cli` syntax has moved around between versions;
-if a future WARP release breaks the `mode proxy` / `proxy port` commands
-in [notify-live.yml](.github/workflows/notify-live.yml) or
-[poll-live.yml](.github/workflows/poll-live.yml), run
-`warp-cli --accept-tos --help` on a fresh runner to find the current one.
+installs and connects itself inside each `notify-live.yml` run — no
+secrets, no external machine. `warp-cli` syntax has moved around between
+versions; if a future WARP release breaks the `mode proxy` / `proxy port`
+commands there, run `warp-cli --accept-tos --help` on a fresh runner to
+find the current one.
 
-### 7. External polling trigger
-```
-POST https://api.github.com/repos/<owner>/<repo>/actions/workflows/poll-live.yml/dispatches
-Authorization: Bearer <fine-grained PAT, Actions: read and write, scoped to this repo>
-Accept: application/vnd.github+json
-Content-Type: application/json
-
-{"ref":"master"}
-```
-Use a separate PAT from the Worker's — least privilege, independently
-revocable. Point an external cron service (e.g. cron-job.org) at this.
-
-### 8. YouTube upload
+### 6. YouTube upload
 Requires a Google Cloud project with YouTube Data API v3 enabled and an
 OAuth client (Desktop app type). See [site-worker/](site-worker/) and
 [PRIVACY.md](PRIVACY.md) if you need to publish the OAuth consent screen

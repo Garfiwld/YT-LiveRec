@@ -43,12 +43,19 @@ progress_pid=$!
 trap 'kill "$progress_pid" 2>/dev/null || true' EXIT
 
 # yt-dlp resumes from existing fragments on the same outtmpl, so a retry
-# after a dropped connection continues rather than starting over.
+# after a dropped connection continues rather than starting over. But the
+# default --skip-unavailable-fragments silently drops content that fails
+# 10 retries (the default) instead of erroring, which is how we lost ~10
+# minutes out of a recording without the process ever crashing — so make
+# fragment retries patient enough that we rarely even reach that point,
+# and abort loudly instead of skipping if we ever do.
 max_attempts=10
 attempt=1
 filepath=""
 while [ "$attempt" -le "$max_attempts" ]; do
-  if filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start -o "${outtmpl}.%(ext)s" --print after_move:filepath "$url" | tail -n1) && [ -n "$filepath" ]; then
+  if filepath=$(yt-dlp "${proxy_args[@]}" --live-from-start \
+      --fragment-retries infinite --retry-sleep "fragment:exp=1:60:2" --abort-on-unavailable-fragments \
+      -o "${outtmpl}.%(ext)s" --print after_move:filepath "$url" | tail -n1) && [ -n "$filepath" ]; then
     break
   fi
   echo "  recording attempt $attempt/$max_attempts failed, retrying in 10s..."

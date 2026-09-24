@@ -9,3 +9,4 @@ downloads/
 __pycache__/
 channels.txt
 .wrangler/
+node_modules/

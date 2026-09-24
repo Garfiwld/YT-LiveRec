@@ -4,3 +4,10 @@ compatibility_date = "2026-01-01"
 
 [vars]
 GH_REPO = "Garfiwld/YT-LiveRec"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[[kv_namespaces]]
+binding = "CHANNELS_KV"
+id = "01353302e6444a12916ad10b493ebf26"

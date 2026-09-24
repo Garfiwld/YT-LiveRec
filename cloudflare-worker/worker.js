@@ -357,7 +357,7 @@ async function checkAndDispatch(handle, env) {
   if (!match) return null;
 
   const videoId = match[1];
-  await fetch(`https://api.github.com/repos/${env.GH_REPO}/dispatches`, {
+  const dispatchRes = await fetch(`https://api.github.com/repos/${env.GH_REPO}/dispatches`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.GH_TOKEN}`,
@@ -369,5 +369,6 @@ async function checkAndDispatch(handle, env) {
       client_payload: { video_id: videoId },
     }),
   });
+  console.log(`dispatch for ${handle} (${videoId}): ${dispatchRes.status} ${await dispatchRes.text()}`);
   return videoId;
 }

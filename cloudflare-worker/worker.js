@@ -37,6 +37,7 @@ export default {
       "/admin/register/verify": handleRegisterVerify,
       "/admin/login/options": handleLoginOptions,
       "/admin/login/verify": handleLoginVerify,
+      "/admin/check-now": handleCheckNow,
     };
     const handler = routes[url.pathname];
     if (!handler) return new Response("ok");
@@ -127,9 +128,35 @@ async function handleAdmin(request, env) {
 <p><button type="submit">Save</button></p>
 </form>
 <p style="color: #666;">One @handle per line. Lines starting with # are ignored.</p>
+<hr>
+<button id="check-now">Check for live now</button>
+<p id="check-status" style="color: #666;"></p>
+<script>
+document.getElementById('check-now').addEventListener('click', async () => {
+  const status = document.getElementById('check-status');
+  status.textContent = 'checking...';
+  const res = await fetch('/admin/check-now', { method: 'POST' });
+  if (!res.ok) { status.textContent = await res.text(); return; }
+  const result = await res.json();
+  status.textContent = result.live.length
+    ? 'live now: ' + result.live.map((r) => r.handle).join(', ')
+    : 'checked ' + result.checked + ' channel(s), none live';
+});
+</script>
 </body>
 </html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
+async function handleCheckNow(request, env) {
+  if (!(await hasValidSession(request, env))) return new Response("unauthorized", { status: 401 });
+  const handles = await getChannels(env);
+  const results = await Promise.all(
+    handles.map(async (handle) => ({ handle, videoId: await checkAndDispatch(handle, env) }))
+  );
+  return new Response(JSON.stringify({ checked: handles.length, live: results.filter((r) => r.videoId) }), {
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function loginPageHtml() {
@@ -327,7 +354,7 @@ async function checkAndDispatch(handle, env) {
   const html = await res.text();
 
   const match = html.match(/rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([^"]+)"/);
-  if (!match) return;
+  if (!match) return null;
 
   const videoId = match[1];
   await fetch(`https://api.github.com/repos/${env.GH_REPO}/dispatches`, {
@@ -342,4 +369,5 @@ async function checkAndDispatch(handle, env) {
       client_payload: { video_id: videoId },
     }),
   });
+  return videoId;
 }

@@ -66,7 +66,20 @@ kill "$progress_pid" 2>/dev/null || true
 
 if [ -z "$filepath" ]; then
   echo "  gave up after $max_attempts attempts"
-  exit 1
+  # Usually the stream just ended mid-download (yt-dlp then errors on the
+  # missing last fragment and never merges), so salvage what we have.
+  parts=( "${outtmpl}".f*.part )
+  parts=( "${parts[@]/*-Frag*}" )
+  inputs=() maps=() i=0
+  for p in "${parts[@]}"; do
+    [ -s "$p" ] || continue
+    inputs+=(-i "$p"); maps+=(-map "$i"); i=$((i + 1))
+  done
+  [ "$i" -gt 0 ] || exit 1
+  filepath="${outtmpl}.mp4"
+  ffmpeg -loglevel error -y "${inputs[@]}" "${maps[@]}" -c copy "$filepath" || exit 1
+  rm -f "${outtmpl}".f*.part* "${outtmpl}".f*.ytdl
+  echo "  merged partial recording into $filepath"
 fi
 title=$(basename "$filepath")
 
